@@ -10,17 +10,20 @@ from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker
 
+print("Version : 1.3")
+
+DRIVE_TOPIC = "/vesc/ackermann_cmd_mux/input/navigation"  # /nav
 NBR_POINTS_SCAN = 100
-BUBBLE_SIZE = 20
+BUBBLE_SIZE = 25
 
-SAFE_DISTANCE = 0.5
+SAFE_DISTANCE = 1
 
-SPEED = 2.0
+SPEED = 1
 CROP_SCAN = (
     250  # Number of points to remove from each side of the scan, must not be too big
 )
 
-GAP_DISTANCE_TRESHOLD = 3.0
+GAP_DISTANCE_TRESHOLD = 2.0
 
 
 def get_nav_msg(angle: float):
@@ -159,7 +162,9 @@ class ReactiveFollowGap:
     def __init__(self):
         # Topics & Subscriptions,Publishers
         rospy.Subscriber("/scan", LaserScan, self.scan_callback)
-        self.drive_pub = rospy.Publisher("/nav", AckermannDriveStamped, queue_size=10)
+        self.drive_pub = rospy.Publisher(
+            DRIVE_TOPIC, AckermannDriveStamped, queue_size=10
+        )
         self.marker_pub = rospy.Publisher("/dynamic_viz", Marker, queue_size=10)
 
     def scan_callback(self, data: LaserScan):
@@ -197,8 +202,7 @@ class ReactiveFollowGap:
         plt.scatter(biggest_gap_best, ranges[biggest_gap_best], c="r")
         plt.scatter(biggest_gap_right, ranges[biggest_gap_right], c="g")
         plt.scatter(biggest_gap_left, ranges[biggest_gap_left], c="g")
-        plt.show()
-        """
+        plt.show()"""
 
         # Create drive message
         nbr_points_per_mean = int(len(data.ranges) / NBR_POINTS_SCAN)
