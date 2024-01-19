@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 
 # ROS Imports
 import rospy
-from sensor_msgs.msg import Image, LaserScan
-from ackermann_msgs.msg import AckermannDriveStamped, AckermannDrive
+from sensor_msgs.msg import LaserScan
+from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker
 
 NBR_POINTS_SCAN = 100
@@ -17,7 +17,7 @@ SAFE_DISTANCE = 0.5
 
 SPEED = 2.0
 CROP_SCAN = (
-    200  # Number of points to remove from each side of the scan, must not be too big
+    250  # Number of points to remove from each side of the scan, must not be too big
 )
 
 GAP_DISTANCE_TRESHOLD = 3.0
@@ -33,6 +33,36 @@ def get_nav_msg(angle: float):
     drive_msg.drive.steering_angle = angle
 
     return drive_msg
+
+
+def get_maker_msg(x: float, y: float):
+    """Return a Marker Message with the given position"""
+
+    SCALE = 0.5
+
+    marker_msg = Marker()
+    marker_msg.header.frame_id = "base_link"
+    marker_msg.header.stamp = rospy.Time.now()
+    marker_msg.ns = "marker1"
+    marker_msg.id = 0
+    marker_msg.type = Marker.SPHERE
+    marker_msg.action = Marker.ADD
+    marker_msg.pose.position.x = x
+    marker_msg.pose.position.y = y
+    marker_msg.pose.position.z = 0
+    marker_msg.pose.orientation.x = 0.0
+    marker_msg.pose.orientation.y = 0.0
+    marker_msg.pose.orientation.z = 0.0
+    marker_msg.pose.orientation.w = 1.0
+    marker_msg.scale.x = SCALE
+    marker_msg.scale.y = SCALE
+    marker_msg.scale.z = SCALE
+    marker_msg.color.a = 1.0  # Don't forget to set the alpha!
+    marker_msg.color.r = 1.0
+    marker_msg.color.g = 0.0
+    marker_msg.color.b = 0.0
+
+    return marker_msg
 
 
 def preprocess_scan(ranges_raw: list) -> np.ndarray:
@@ -130,7 +160,7 @@ class ReactiveFollowGap:
         # Topics & Subscriptions,Publishers
         rospy.Subscriber("/scan", LaserScan, self.scan_callback)
         self.drive_pub = rospy.Publisher("/nav", AckermannDriveStamped, queue_size=10)
-        self.marker_pub = rospy.Publisher("/marker", Marker, queue_size=10)
+        self.marker_pub = rospy.Publisher("/dynamic_viz", Marker, queue_size=10)
 
     def scan_callback(self, data: LaserScan):
         """Process each LiDAR scan as per the Follow Gap algorithm & publish an AckermannDriveStamped Message"""
@@ -173,8 +203,9 @@ class ReactiveFollowGap:
         # Create drive message
         nbr_points_per_mean = int(len(data.ranges) / NBR_POINTS_SCAN)
         index_biggest_gap_raw = biggest_gap_best * nbr_points_per_mean
+        angle = int_to_angle(data, index_biggest_gap_raw)
 
-        drive_msg = get_nav_msg(int_to_angle(data, index_biggest_gap_raw))
+        drive_msg = get_nav_msg(angle)
 
         # print(f"Nbr points per mean : {nbr_points_per_mean}")
         # print(f"closest index : {biggest_gap_best}/{len(ranges)}")
@@ -183,6 +214,9 @@ class ReactiveFollowGap:
         # print("--------------------------")
 
         self.drive_pub.publish(drive_msg)
+        x = data.ranges[index_biggest_gap_raw] * math.cos(angle)
+        y = data.ranges[index_biggest_gap_raw] * math.sin(angle)
+        self.marker_pub.publish(get_maker_msg(x, y))
 
 
 def main(args):
