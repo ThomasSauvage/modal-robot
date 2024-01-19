@@ -72,3 +72,7 @@ roslaunch f1tenth_simulator simulator.launch
 ```bash
 rosrun f1tenth_perso emergency_breaking.py
 ```
+
+# Rendu
+
+- Faire une présentation de 10 mins
