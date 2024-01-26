@@ -10,35 +10,51 @@ from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker
 
-print("Version : 1.3")
+print("Version : 2.1")
+DEBUG = False
 
-DRIVE_TOPIC = "/vesc/ackermann_cmd_mux/input/navigation"  # /nav
-NBR_POINTS_SCAN = 100
-BUBBLE_SIZE = 25
+DRIVE_TOPIC = "/nav"  # "/vesc/ackermann_cmd_mux/input/navigation"
+NBR_POINTS_SCAN = 50
+BUBBLE_RADIUS = 0.5  # m
 
-SAFE_DISTANCE = 1
+SAFE_DISTANCE = 1  # m
 
-SPEED = 1
 CROP_SCAN = (
-    250  # Number of points to remove from each side of the scan, must not be too big
+    200  # Number of points to remove from each side of the scan, must not be too big
 )
+
+# Angle param
+SMOOTH_ANGLE = 0.8
+# Speed params
+MAX_SPEED = 7  # m/s
+DISTANCE_FOR_MAX_SPEED = 10  # m
 
 GAP_DISTANCE_TRESHOLD = 2.0
 
 
-def get_nav_msg(angle: float):
+def speed_function(distance: float) -> float:
+    """Returns the speed of the robot in function of the distance."""
+    return MAX_SPEED
+
+    if distance >= DISTANCE_FOR_MAX_SPEED:
+        return MAX_SPEED
+    else:
+        return (MAX_SPEED / DISTANCE_FOR_MAX_SPEED) * abs(distance)
+
+
+def get_nav_msg(angle: float, distance: float):
     """Return an AckermannDriveStamped Message with the given steering angle"""
 
     drive_msg = AckermannDriveStamped()
     drive_msg.header.stamp = rospy.Time.now()
     drive_msg.header.frame_id = "laser"
-    drive_msg.drive.speed = SPEED
-    drive_msg.drive.steering_angle = angle
+    drive_msg.drive.speed = speed_function(distance)
+    drive_msg.drive.steering_angle = angle * SMOOTH_ANGLE
 
     return drive_msg
 
 
-def get_maker_msg(x: float, y: float):
+def get_marker_msg(x: float, y: float):
     """Return a Marker Message with the given position"""
 
     SCALE = 0.5
@@ -97,7 +113,7 @@ def get_biggest_gap(ranges: np.ndarray):
     """Return the left & right indicies of the biggest gap in ranges"""
 
     biggest_gap_left, biggest_gap_right = 0, 0
-    biggest_gap = 0
+    biggest_gap_size = 0
     i = 0
     while i < len(ranges):
         size_current_gap = 0
@@ -105,8 +121,8 @@ def get_biggest_gap(ranges: np.ndarray):
             size_current_gap += 1
             i += 1
 
-        if size_current_gap > biggest_gap:
-            biggest_gap = size_current_gap
+        if size_current_gap > biggest_gap_size:
+            biggest_gap_size = size_current_gap
             biggest_gap_left = i - size_current_gap
             biggest_gap_right = i
 
@@ -139,6 +155,7 @@ def get_fancy_lidar_string(
     biggest_gap_right: int,
     biggest_gap_best: int,
     ranges: "list[int]",
+    distance: float,
 ):
     """Return a string representing the LiDAR scan with the biggest gap highlighted"""
 
@@ -155,7 +172,7 @@ def get_fancy_lidar_string(
         if ranges[i] == 0:
             lidar_string = replace(lidar_string, i, "█")
 
-    return lidar_string[::-1]
+    return lidar_string[::-1] + f" Speed: {speed_function(distance)}"
 
 
 class ReactiveFollowGap:
@@ -170,22 +187,31 @@ class ReactiveFollowGap:
     def scan_callback(self, data: LaserScan):
         """Process each LiDAR scan as per the Follow Gap algorithm & publish an AckermannDriveStamped Message"""
 
+        nbr_points_per_mean = int((len(data.ranges) - 2 * CROP_SCAN) / NBR_POINTS_SCAN)
         ranges_no_bubble = preprocess_scan(data.ranges)  # type: ignore
 
         # Eliminate all points inside 'bubble' (set them to zero)
         ranges = ranges_no_bubble.copy()
         for i in range(len(ranges_no_bubble)):
             if ranges_no_bubble[i] < SAFE_DISTANCE:
-                ranges[i - BUBBLE_SIZE : i + BUBBLE_SIZE] = 0
+                if ranges_no_bubble[i] != 0:
+                    theta_to_ban = np.arctan(BUBBLE_RADIUS / ranges_no_bubble[i])
+                else:
+                    theta_to_ban = np.pi / 2
+
+                indexes_to_ban = int(
+                    theta_to_ban / (data.angle_increment * nbr_points_per_mean)
+                )
+
+                ranges[i - indexes_to_ban : i + indexes_to_ban] = 0
 
         # Find max length gap
         biggest_gap_left, biggest_gap_right = get_biggest_gap(ranges)
 
         # Find the best point in the gap
         biggest_gap_best = biggest_gap_left + np.argmax(
-            ranges[biggest_gap_left:biggest_gap_right]
+            ranges[biggest_gap_left : biggest_gap_right + 1]
         )
-        # print(np.argmax(ranges[biggest_gap_left:biggest_gap_right]))
 
         print(
             get_fancy_lidar_string(
@@ -193,23 +219,30 @@ class ReactiveFollowGap:
                 biggest_gap_right,
                 biggest_gap_best,
                 ranges,
+                ranges[biggest_gap_best],
             )
         )
 
-        """
-        plt.plot(range(len(ranges)), ranges)
-        plt.plot(range(len(ranges)), ranges_no_bubble)
-        plt.scatter(biggest_gap_best, ranges[biggest_gap_best], c="r")
-        plt.scatter(biggest_gap_right, ranges[biggest_gap_right], c="g")
-        plt.scatter(biggest_gap_left, ranges[biggest_gap_left], c="g")
-        plt.show()"""
-
         # Create drive message
-        nbr_points_per_mean = int(len(data.ranges) / NBR_POINTS_SCAN)
-        index_biggest_gap_raw = biggest_gap_best * nbr_points_per_mean
-        angle = int_to_angle(data, index_biggest_gap_raw)
+        biggest_gap_best_raw = CROP_SCAN + biggest_gap_best * nbr_points_per_mean
+        angle = int_to_angle(data, biggest_gap_best_raw)
 
-        drive_msg = get_nav_msg(angle)
+        drive_msg = get_nav_msg(angle, ranges[biggest_gap_best])
+
+        if DEBUG:
+            plt.plot(range(len(ranges)), ranges, label="Ranges")
+            plt.plot(range(len(ranges)), ranges_no_bubble, label="Ranges no bubble")
+            plt.scatter(biggest_gap_best, ranges[biggest_gap_best], c="r")
+            plt.scatter(biggest_gap_right, ranges[biggest_gap_right], c="g")
+            plt.scatter(biggest_gap_left, ranges[biggest_gap_left], c="g")
+            plt.legend()
+            plt.show()
+
+            resized = CROP_SCAN + np.arange(len(ranges)) * nbr_points_per_mean
+            plt.plot(range(len(data.ranges)), data.ranges)
+            plt.plot(resized, ranges)
+            plt.scatter(biggest_gap_best_raw, data.ranges[biggest_gap_best_raw], c="r")
+            plt.show()
 
         # print(f"Nbr points per mean : {nbr_points_per_mean}")
         # print(f"closest index : {biggest_gap_best}/{len(ranges)}")
@@ -218,9 +251,9 @@ class ReactiveFollowGap:
         # print("--------------------------")
 
         self.drive_pub.publish(drive_msg)
-        x = data.ranges[index_biggest_gap_raw] * math.cos(angle)
-        y = data.ranges[index_biggest_gap_raw] * math.sin(angle)
-        self.marker_pub.publish(get_maker_msg(x, y))
+        x = data.ranges[biggest_gap_best_raw] * math.cos(angle)
+        y = data.ranges[biggest_gap_best_raw] * math.sin(angle)
+        self.marker_pub.publish(get_marker_msg(x, y))
 
 
 def main(args):
