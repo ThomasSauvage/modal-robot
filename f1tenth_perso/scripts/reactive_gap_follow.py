@@ -10,36 +10,66 @@ from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker
 
-print("Version : 2.1")
+print("Version : 2.4")
 DEBUG = False
 
 DRIVE_TOPIC = "/nav"  # "/vesc/ackermann_cmd_mux/input/navigation"
-NBR_POINTS_SCAN = 50
-BUBBLE_RADIUS = 0.5  # m
+NBR_POINTS_SCAN = 20
 
-SAFE_DISTANCE = 1  # m
-
+GAP_DISTANCE_TRESHOLD = 2.0
 CROP_SCAN = (
     200  # Number of points to remove from each side of the scan, must not be too big
 )
 
 # Angle param
-SMOOTH_ANGLE = 0.8
-# Speed params
-MAX_SPEED = 7  # m/s
-DISTANCE_FOR_MAX_SPEED = 10  # m
+SMOOTH_ANGLE = 1
 
-GAP_DISTANCE_TRESHOLD = 2.0
+K_LIVE = 0.9
+K_PAST = 0.1
+
+# Speed params
+MAX_SPEED = 8  # m/s
+MIN_SPEED = 2  # m/s
+DISTANCE_FOR_MAX_SPEED = 8  # m
+
+# Bubble params
+SAFE_DISTANCE = 1  # m
+BUBBLE_RADIUS = 0.4  # m
+
+
+def affine(x: float, x1: float, x2: float, y1: float, y2: float) -> float:
+    """Return the affine function that goes through (x1, y1) and (x2, y2)"""
+
+    return ((y2 - y1) / (x2 - x1)) * (x - x1) + y1
+
+
+def erf_remap(x: float) -> float:
+    """erf remaped from [0, DISTANCE_FOR_MAX_SPEED] to [0, 1]"""
+
+    return (1 + math.erf(affine(x, 0, DISTANCE_FOR_MAX_SPEED, -2, 2))) / 2
 
 
 def speed_function(distance: float) -> float:
     """Returns the speed of the robot in function of the distance."""
-    return MAX_SPEED
 
     if distance >= DISTANCE_FOR_MAX_SPEED:
         return MAX_SPEED
     else:
-        return (MAX_SPEED / DISTANCE_FOR_MAX_SPEED) * abs(distance)
+        return (MAX_SPEED - MIN_SPEED) * erf_remap(distance) + MIN_SPEED
+        # Affine
+        # return ((MAX_SPEED - MIN_SPEED) / DISTANCE_FOR_MAX_SPEED) * distance + MIN_SPEED
+
+
+def test_speed_function():
+    dist = np.linspace(0, DISTANCE_FOR_MAX_SPEED - 0.01, 100)
+
+    speed = np.vectorize(speed_function)(dist)
+
+    plt.plot(dist, speed)
+    plt.show()
+
+
+# test_speed_function()
 
 
 def get_nav_msg(angle: float, distance: float):
@@ -48,7 +78,7 @@ def get_nav_msg(angle: float, distance: float):
     drive_msg = AckermannDriveStamped()
     drive_msg.header.stamp = rospy.Time.now()
     drive_msg.header.frame_id = "laser"
-    drive_msg.drive.speed = speed_function(distance)
+    drive_msg.drive.speed = speed_function(distance) * abs(np.cos(angle * 0.5))
     drive_msg.drive.steering_angle = angle * SMOOTH_ANGLE
 
     return drive_msg
@@ -184,6 +214,8 @@ class ReactiveFollowGap:
         )
         self.marker_pub = rospy.Publisher("/dynamic_viz", Marker, queue_size=10)
 
+        self.latest_biggest_gap_best = None
+
     def scan_callback(self, data: LaserScan):
         """Process each LiDAR scan as per the Follow Gap algorithm & publish an AckermannDriveStamped Message"""
 
@@ -209,9 +241,21 @@ class ReactiveFollowGap:
         biggest_gap_left, biggest_gap_right = get_biggest_gap(ranges)
 
         # Find the best point in the gap
+        """
         biggest_gap_best = biggest_gap_left + np.argmax(
             ranges[biggest_gap_left : biggest_gap_right + 1]
-        )
+        )"""
+        biggest_gap_best_present = (biggest_gap_left + biggest_gap_right) // 2
+
+        if self.latest_biggest_gap_best is None:
+            biggest_gap_best = biggest_gap_best_present
+        else:
+            biggest_gap_best = round(
+                biggest_gap_best_present * K_LIVE
+                + self.latest_biggest_gap_best * K_PAST
+            )
+
+        self.latest_biggest_gap_best = biggest_gap_best
 
         print(
             get_fancy_lidar_string(
@@ -224,6 +268,7 @@ class ReactiveFollowGap:
         )
 
         # Create drive message
+
         biggest_gap_best_raw = CROP_SCAN + biggest_gap_best * nbr_points_per_mean
         angle = int_to_angle(data, biggest_gap_best_raw)
 
