@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import numpy as np
+import math
 
 import rospy
 import tf2_ros
@@ -20,9 +21,9 @@ NBR_WAYPOINTS = 400
 
 DIST_L = 1  # m
 SMOOTH_ANGLE = 0.5
-MAX_SPEED = 4  # m/s
+MAX_SPEED = 20  # m/s
 
-CURV_OVERHEAD = 5  # in indexes
+CURV_OVERHEAD = 20  # in indexes
 
 
 def get_waypoints() -> np.ndarray:
@@ -136,9 +137,6 @@ class PurePursuit(object):
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(buffer=self.tf_buffer)
 
-        self.starting_pos_x = None
-        self.starting_pos_y = None
-
         self.drive_pub = rospy.Publisher(
             DRIVE_TOPIC, AckermannDriveStamped, queue_size=10
         )
@@ -160,12 +158,9 @@ class PurePursuit(object):
             np.ndarray: The position of the point in the car frame.
         """
 
-        if self.starting_pos_x is None or self.starting_pos_y is None:
-            raise ValueError("Starting position not set")
-
         point = tf2_geometry_msgs.PoseStamped()
-        point.pose.position.x = x + self.starting_pos_x
-        point.pose.position.y = y + self.starting_pos_y
+        point.pose.position.x = x
+        point.pose.position.y = y
         point.pose.position.z = 0
         point.header.frame_id = "map"
 
@@ -176,7 +171,7 @@ class PurePursuit(object):
             [point_transformed.pose.position.x, point_transformed.pose.position.y]
         )
 
-    def get_target_point(self, x: float, y: float) -> "tuple[int, np.ndarray]":
+    def get_target_point(self, x: float, y: float) -> "tuple[np.ndarray, np.ndarray]":
         """Get the target point for the pure pursuit algorithm.
 
         Args:
@@ -199,70 +194,62 @@ class PurePursuit(object):
             )  # The closest waypoint that is outside the circle of radius L
 
             target_point = WAYPOINTS[closest_waypoint_far, :2]
-            target_point_car_frame = self.from_global_to_car_frame(
+            target_point_cf = self.from_global_to_car_frame(
                 target_point[0], target_point[1]
             )
 
             # If the target point is in front of the car, return it
-            if np.dot(target_point_car_frame, np.array([1, 0])) >= 0:  # type: ignore
-                return closest_waypoint_far, target_point_car_frame
+            if np.dot(target_point_cf, np.array([1, 0])) >= 0:  # type: ignore
+                overhead_target = WAYPOINTS[
+                    (closest_waypoint_far + CURV_OVERHEAD) % NBR_WAYPOINTS, :2
+                ]
+
+                overhead_target_cf = self.from_global_to_car_frame(
+                    overhead_target[0], overhead_target[1]
+                )
+                return target_point_cf, overhead_target_cf
             else:
-                print(" [INFO]: Target point behind the car, removing it from the list")
+                # print(" [INFO]: Target point behind the car, removing it from the list")
                 values_far[closest_waypoint_far] = np.inf
 
-    def get_speed(self, target_point_car_frame_index: int) -> float:
+    def get_speed(
+        self, current_target_cf: np.ndarray, overhead_target_cf: np.ndarray
+    ) -> float:
         """Return the speed of the car.
 
         Args:
-            target_point_car_frame (np.ndarray): The target point in the car frame.
-
-        Returns:
-            float: The speed of the car.
+            current_target_cf (np.ndarray): The current target point in the car frame.
+            overhead_target_cf (np.ndarray): The overhead target point in the car frame.
         """
 
-        target = WAYPOINTS[target_point_car_frame_index, :2]
-
-        print((np.linalg.norm(target), target_point_car_frame_index))
-
-        target_overhead = WAYPOINTS[
-            (target_point_car_frame_index + CURV_OVERHEAD) % NBR_WAYPOINTS, :2
-        ]
-
-        waypoints_curv = np.dot(target, target_overhead) / (
-            np.linalg.norm(target) * np.linalg.norm(target_overhead)
+        waypoints_curv = abs(np.dot(current_target_cf, overhead_target_cf)) / (  # type: ignore
+            np.linalg.norm(current_target_cf) * np.linalg.norm(overhead_target_cf)
         )
 
         return waypoints_curv * MAX_SPEED
 
     def pose_callback(self, pose_msg: Odometry) -> None:
-        if self.starting_pos_x is None or self.starting_pos_y is None:
-            self.starting_pos_x = pose_msg.pose.pose.position.x
-            self.starting_pos_y = pose_msg.pose.pose.position.y
-
         # In lab ref, 0, 0 is the starting position
-        x = pose_msg.pose.pose.position.x - self.starting_pos_x
-        y = pose_msg.pose.pose.position.y - self.starting_pos_y
+        x = pose_msg.pose.pose.position.x
+        y = pose_msg.pose.pose.position.y
 
-        print(pose_msg.pose.pose.position.x, self.starting_pos_x, x)
+        if math.isnan(x) or math.isnan(y):
+            raise ValueError("x or y is NaN")
 
-        target_point_car_frame_index, target_point_car_frame = self.get_target_point(
-            x, y
-        )
+        target_point_cf, overhead_target_cf = self.get_target_point(x, y)
 
-        self.marker_pub.publish(
-            get_marker_msg(target_point_car_frame[0], target_point_car_frame[1])
-        )
+        self.marker_pub.publish(get_marker_msg(target_point_cf[0], target_point_cf[1]))
 
         # Calculate curvature/steering angle
-        curvature = 2 * target_point_car_frame[1] / DIST_L**2
+        curvature = 2 * target_point_cf[1] / DIST_L**2
 
         # publish drive message, don't forget to limit the steering angle between -0.4189 and 0.4189 radians
-        speed = self.get_speed(target_point_car_frame_index)
+        speed = self.get_speed(target_point_cf, overhead_target_cf)
         self.drive_pub.publish(get_nav_msg(curvature * SMOOTH_ANGLE, speed))
 
         # self.marker_array_pub.publish(WAYPOINTS_MARKER)
         print(
-            f"CAR {x:.2f} {y:.2f} | TFC {target_point_car_frame[0]:.2f} {target_point_car_frame[1]:.2f} | CURV {curvature:.2f} | SPEED {speed:.2f}"
+            f"CAR {x:.2f} {y:.2f} | TFC {target_point_cf[0]:.2f} {target_point_cf[1]:.2f} | CURV {curvature:.2f} | SPEED {speed:.2f}"
         )
 
 
