@@ -6,7 +6,7 @@ import rospy
 import tf2_ros
 import tf2_geometry_msgs
 
-from pprint import pprint
+from utils.speed import ERFFunc
 
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker, MarkerArray
@@ -21,9 +21,13 @@ NBR_WAYPOINTS = 400
 
 DIST_L = 1  # m
 SMOOTH_ANGLE = 0.5
-MAX_SPEED = 20  # m/s
 
 CURV_OVERHEAD = 20  # in indexes
+
+speed_function = ERFFunc(
+    max_speed=7, min_speed=2, x_for_max_speed=0.9, x_for_min_speed=0.6
+)
+speed_function.show()
 
 
 def get_waypoints() -> np.ndarray:
@@ -46,7 +50,7 @@ def get_waypoints() -> np.ndarray:
 WAYPOINTS = get_waypoints()
 
 
-def get_marker_msg(x: float, y: float) -> Marker:
+def get_marker_msg(x: float, y: float, id: int) -> Marker:
     """Return a Marker Message with the given position"""
 
     SCALE = 0.2
@@ -55,7 +59,7 @@ def get_marker_msg(x: float, y: float) -> Marker:
     marker_msg.header.frame_id = "base_link"
     marker_msg.header.stamp = rospy.Time.now()
     marker_msg.ns = "marker1"
-    marker_msg.id = 0
+    marker_msg.id = id
     marker_msg.type = Marker.SPHERE
     marker_msg.action = Marker.ADD
     marker_msg.pose.position.x = x
@@ -113,7 +117,7 @@ def get_marker_array_waypoint() -> MarkerArray:
     return marker_array
 
 
-WAYPOINTS_MARKER = get_marker_array_waypoint()
+# WAYPOINTS_MARKER = get_marker_array_waypoint()
 
 
 def get_nav_msg(angle: float, speed: float) -> AckermannDriveStamped:
@@ -128,7 +132,7 @@ def get_nav_msg(angle: float, speed: float) -> AckermannDriveStamped:
     return drive_msg
 
 
-class PurePursuit(object):
+class PurePursuit:
     """
     The class that handles pure pursuit.
     """
@@ -226,7 +230,8 @@ class PurePursuit(object):
             np.linalg.norm(current_target_cf) * np.linalg.norm(overhead_target_cf)
         )
 
-        return waypoints_curv * MAX_SPEED
+        print(waypoints_curv)
+        return speed_function(waypoints_curv)
 
     def pose_callback(self, pose_msg: Odometry) -> None:
         # In lab ref, 0, 0 is the starting position
@@ -238,7 +243,12 @@ class PurePursuit(object):
 
         target_point_cf, overhead_target_cf = self.get_target_point(x, y)
 
-        self.marker_pub.publish(get_marker_msg(target_point_cf[0], target_point_cf[1]))
+        self.marker_pub.publish(
+            get_marker_msg(target_point_cf[0], target_point_cf[1], 0)
+        )
+        self.marker_pub.publish(
+            get_marker_msg(overhead_target_cf[0], overhead_target_cf[1], 1)
+        )
 
         # Calculate curvature/steering angle
         curvature = 2 * target_point_cf[1] / DIST_L**2
@@ -248,9 +258,9 @@ class PurePursuit(object):
         self.drive_pub.publish(get_nav_msg(curvature * SMOOTH_ANGLE, speed))
 
         # self.marker_array_pub.publish(WAYPOINTS_MARKER)
-        print(
-            f"CAR {x:.2f} {y:.2f} | TFC {target_point_cf[0]:.2f} {target_point_cf[1]:.2f} | CURV {curvature:.2f} | SPEED {speed:.2f}"
-        )
+        # print(
+        #    f"CAR {x:.2f} {y:.2f} | TFC {target_point_cf[0]:.2f} {target_point_cf[1]:.2f} | CURV {curvature:.2f} | SPEED {speed:.2f}"
+        # )
 
 
 def main():
