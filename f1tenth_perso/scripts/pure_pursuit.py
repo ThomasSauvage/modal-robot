@@ -6,7 +6,7 @@ import rospy
 import tf2_ros
 import tf2_geometry_msgs
 
-from utils.speed import ERFFunc
+from utils.speed import ERF
 
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker, MarkerArray
@@ -22,11 +22,9 @@ NBR_WAYPOINTS = 400
 DIST_L = 1  # m
 SMOOTH_ANGLE = 0.5
 
-CURV_OVERHEAD = 20  # in indexes
+CURV_OVERHEAD = 10  # in indexes
 
-speed_function = ERFFunc(
-    max_speed=7, min_speed=2, x_for_max_speed=0.9, x_for_min_speed=0.6
-)
+speed_function = ERF(max_speed=7, min_speed=2, x_for_max_speed=1, x_for_min_speed=0.8)
 speed_function.show()
 
 
@@ -50,7 +48,9 @@ def get_waypoints() -> np.ndarray:
 WAYPOINTS = get_waypoints()
 
 
-def get_marker_msg(x: float, y: float, id: int) -> Marker:
+def get_marker_msg(
+    x: float, y: float, id: int, color: "tuple[float, float, float]"
+) -> Marker:
     """Return a Marker Message with the given position"""
 
     SCALE = 0.2
@@ -73,9 +73,9 @@ def get_marker_msg(x: float, y: float, id: int) -> Marker:
     marker_msg.scale.y = SCALE
     marker_msg.scale.z = SCALE
     marker_msg.color.a = 1.0  # Don't forget to set the alpha!
-    marker_msg.color.r = 1.0
-    marker_msg.color.g = 0.0
-    marker_msg.color.b = 0.0
+    marker_msg.color.r = color[0]
+    marker_msg.color.g = color[1]
+    marker_msg.color.b = color[2]
 
     return marker_msg
 
@@ -87,7 +87,7 @@ def get_marker_array_waypoint() -> MarkerArray:
 
     marker_array = MarkerArray()
 
-    for i, point in enumerate(WAYPOINTS):
+    for i, point in enumerate(WAYPOINTS):  # type: ignore
         marker_msg = Marker()
         marker_msg.header.frame_id = "map"
         # marker_msg.header.stamp = rospy.Time.now()
@@ -226,12 +226,13 @@ class PurePursuit:
             overhead_target_cf (np.ndarray): The overhead target point in the car frame.
         """
 
-        waypoints_curv = abs(np.dot(current_target_cf, overhead_target_cf)) / (  # type: ignore
-            np.linalg.norm(current_target_cf) * np.linalg.norm(overhead_target_cf)
+        overhead_angle = math.acos(
+            np.dot(current_target_cf, overhead_target_cf)
+            / (np.linalg.norm(current_target_cf) * np.linalg.norm(overhead_target_cf))
         )
 
-        print(waypoints_curv)
-        return speed_function(waypoints_curv)
+        print(overhead_angle)
+        return speed_function(overhead_angle)
 
     def pose_callback(self, pose_msg: Odometry) -> None:
         # In lab ref, 0, 0 is the starting position
@@ -244,10 +245,15 @@ class PurePursuit:
         target_point_cf, overhead_target_cf = self.get_target_point(x, y)
 
         self.marker_pub.publish(
-            get_marker_msg(target_point_cf[0], target_point_cf[1], 0)
+            get_marker_msg(target_point_cf[0], target_point_cf[1], 0, color=(1, 0, 0))
         )
         self.marker_pub.publish(
-            get_marker_msg(overhead_target_cf[0], overhead_target_cf[1], 1)
+            get_marker_msg(
+                overhead_target_cf[0],
+                overhead_target_cf[1],
+                1,
+                color=(0.81, 0.17, 0.93),
+            )
         )
 
         # Calculate curvature/steering angle
