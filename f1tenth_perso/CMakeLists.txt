@@ -163,6 +163,8 @@ catkin_install_python(PROGRAMS
    scripts/emergency_breaking.py
    scripts/wall_follow.py
    scripts/reactive_gap_follow.py
+   scripts/waypoint_logger.py
+   scripts/pure_pursuit.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )
 
