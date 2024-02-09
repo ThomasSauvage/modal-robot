@@ -13,19 +13,20 @@ from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import Odometry
 
 
-DRIVE_TOPIC = "/vesc/ackermann_cmd_mux/input/navigation"  # '/nav'
+DRIVE_TOPIC = "/nav"  # "/vesc/ackermann_cmd_mux/input/navigation"
 WAYPOINTS_FILENAME = "map.csv"
 
+SHOW_WAYPOINTS = False
 
 NBR_WAYPOINTS = 400
 
 DIST_L = 1  # m
-SMOOTH_ANGLE = 0.5
+SMOOTH_ANGLE = 0.7
 
-CURV_OVERHEAD = 10  # in indexes
+CURV_OVERHEAD = 15  # in indexes
 
 speed_function = ReversedERF(
-    max_speed=1.3, min_speed=0.7, x_for_max_speed=0, x_for_min_speed=1.22
+    max_speed=7, min_speed=1, x_for_max_speed=0, x_for_min_speed=1.22
 )
 
 
@@ -105,10 +106,10 @@ def get_marker_array_waypoint() -> MarkerArray:
         marker_msg.scale.x = SCALE
         marker_msg.scale.y = SCALE
         marker_msg.scale.z = SCALE
-        marker_msg.color.a = 0.5  # Don't forget to set the alpha!
-        marker_msg.color.r = 1
-        marker_msg.color.g = 1
-        marker_msg.color.b = 1
+        marker_msg.color.a = 1  # Don't forget to set the alpha!
+        marker_msg.color.r = 0.1
+        marker_msg.color.g = 0.1
+        marker_msg.color.b = 0.1
 
         # To only publish once and keep it persistent
         # marker_msg.lifetime = rospy.Duration() (doesn't work)
@@ -118,7 +119,8 @@ def get_marker_array_waypoint() -> MarkerArray:
     return marker_array
 
 
-# WAYPOINTS_MARKER = get_marker_array_waypoint()
+if SHOW_WAYPOINTS:
+    WAYPOINTS_MARKER = get_marker_array_waypoint()
 
 
 def get_nav_msg(angle: float, speed: float) -> AckermannDriveStamped:
@@ -264,7 +266,8 @@ class PurePursuit:
         speed = self.get_speed(target_point_cf, overhead_target_cf)
         self.drive_pub.publish(get_nav_msg(curvature * SMOOTH_ANGLE, speed))
 
-        # self.marker_array_pub.publish(WAYPOINTS_MARKER)
+        if SHOW_WAYPOINTS:
+            self.marker_array_pub.publish(WAYPOINTS_MARKER)
         # print(
         #    f"CAR {x:.2f} {y:.2f} | TFC {target_point_cf[0]:.2f} {target_point_cf[1]:.2f} | CURV {curvature:.2f} | SPEED {speed:.2f}"
         # )
