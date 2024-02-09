@@ -73,28 +73,6 @@ roslaunch f1tenth_simulator simulator.launch
 rosrun f1tenth_perso emergency_breaking.py
 ```
 
-# Sur la vraie machine
-
-- Copier le code
-```bash
-scp ./reactive_gap_follow.py  f11:~/Documents/ThomasSauvage
-```
-
-- Se connecter à la machine
-```bash
-ssh f11
-```
-
-- Lancer le code
-```bash
-roslaunch racecar teleop.launch
-```
-
-- Lancer le script
-```bash
-python3 ~/Documents/ThomasSauvage/reactive_gap_follow.py
-```
-
 # Rendu
 
 - Faire une présentation de 10 mins
