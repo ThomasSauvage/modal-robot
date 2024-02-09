@@ -10,7 +10,7 @@ from numpy import linalg as LA
 from tf.transformations import euler_from_quaternion
 from nav_msgs.msg import Odometry
 
-ODOM_SUB = "/pf/pose/odom/"  # "odom"
+ODOM_SUB = "/odom"  # "/pf/pose/odom/"  # "odom"
 
 if os.path.exists("map.csv"):
     raise FileExistsError("map.csv already exists")
