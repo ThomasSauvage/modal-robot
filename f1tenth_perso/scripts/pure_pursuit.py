@@ -36,6 +36,8 @@ def get_waypoints() -> np.ndarray:
     with open(WAYPOINTS_FILENAME, "r") as f:
         waypoints_csv = f.readlines()
 
+    print(len(waypoints_csv))
+
     waypoints = np.zeros((NBR_WAYPOINTS, 4))
 
     nbr_waypoints_per_line = len(waypoints_csv) // NBR_WAYPOINTS
@@ -154,6 +156,10 @@ class PurePursuit:
 
         rospy.Subscriber("/odom", Odometry, self.pose_callback)
 
+        self.car_x = 0
+        self.car_y = 0
+        self.car_theta = 0
+
     def from_global_to_car_frame(self, x: float, y: float) -> np.ndarray:
         """Transform a point from the global frame to the car frame.
 
@@ -165,25 +171,19 @@ class PurePursuit:
             np.ndarray: The position of the point in the car frame.
         """
 
-        point = tf2_geometry_msgs.PoseStamped()
-        point.pose.position.x = x
-        point.pose.position.y = y
-        point.pose.position.z = 0
-        point.header.frame_id = "map"
+        new_x = math.cos(self.car_theta) * (x - self.car_x) + math.sin(
+            self.car_theta
+        ) * (y - self.car_y)
+        new_y = -math.sin(self.car_theta) * (x - self.car_x) + math.cos(
+            self.car_theta
+        ) * (y - self.car_y)
 
-        transformer = self.tf_buffer.lookup_transform("base_link", "map", rospy.Time())
-        point_transformed = tf2_geometry_msgs.do_transform_pose(point, transformer)
+        return np.array([new_x, new_y])
 
-        return np.array(
-            [point_transformed.pose.position.x, point_transformed.pose.position.y]
-        )
-
-    def get_target_point(self, x: float, y: float) -> "tuple[np.ndarray, np.ndarray]":
+    def get_target_point(
+        self,
+    ) -> "tuple[np.ndarray, np.ndarray]":
         """Get the target point for the pure pursuit algorithm.
-
-        Args:
-            x (float): The x position of the car.
-            y (float): The y position of the car.
 
         Returns:
             int: The index of the target point in the car frame.
@@ -191,7 +191,9 @@ class PurePursuit:
         """
 
         # Find the farthest waypoint of dist <= DIST_L and the closest waypoint of dist > DIST_L
-        dists_to_car = np.linalg.norm(WAYPOINTS[:, :2] - np.array([x, y]), axis=1)
+        dists_to_car = np.linalg.norm(
+            WAYPOINTS[:, :2] - np.array([self.car_x, self.car_y]), axis=1
+        )
         values_far = dists_to_car.copy()
         values_far[values_far <= DIST_L] = np.inf
 
@@ -239,13 +241,14 @@ class PurePursuit:
 
     def pose_callback(self, pose_msg: Odometry) -> None:
         # In lab ref, 0, 0 is the starting position
-        x = pose_msg.pose.pose.position.x
-        y = pose_msg.pose.pose.position.y
+        self.car_x = pose_msg.pose.pose.position.x
+        self.car_y = pose_msg.pose.pose.position.y
+        self.car_theta = pose_msg.pose.pose.orientation.z
 
-        if math.isnan(x) or math.isnan(y):
+        if math.isnan(self.car_x) or math.isnan(self.car_y):
             raise ValueError("x or y is NaN")
 
-        target_point_cf, overhead_target_cf = self.get_target_point(x, y)
+        target_point_cf, overhead_target_cf = self.get_target_point()
 
         self.marker_pub.publish(
             get_marker_msg(target_point_cf[0], target_point_cf[1], 0, color=(1, 0, 0))

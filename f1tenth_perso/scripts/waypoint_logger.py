@@ -10,7 +10,7 @@ from numpy import linalg as LA
 from tf.transformations import euler_from_quaternion
 from nav_msgs.msg import Odometry
 
-ODOM_SUB = "/odom"  # "/pf/pose/odom/"  # "odom"
+ODOM_SUB = "/odom"  # "/pf/pose/odom/"
 
 if os.path.exists("map.csv"):
     raise FileExistsError("map.csv already exists")
@@ -42,6 +42,11 @@ def save_waypoint(data):
     )
     if data.twist.twist.linear.x > 0.0:
         print(data.twist.twist.linear.x)
+
+    print(
+        "Saving waypoint: %f, %f, %f, %f"
+        % (data.pose.pose.position.x, data.pose.pose.position.y, euler[2], speed)
+    )
 
     file.write(
         "%f, %f, %f, %f\n"
