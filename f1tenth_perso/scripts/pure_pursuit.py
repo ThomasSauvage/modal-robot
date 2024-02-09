@@ -176,8 +176,8 @@ class PurePursuit:
         """
 
         norm = np.linalg.norm([x - self.car_x, y - self.car_y])
-        new_x = norm * math.cos(self.car_theta)
-        new_y = norm * math.sin(self.car_theta)
+        new_x = norm * math.sin(self.car_theta)
+        new_y = norm * math.cos(self.car_theta)
 
         return np.array([new_x, new_y])
 
