@@ -10,16 +10,18 @@ from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker
 
-print("Version : 2.17")
+print("Version : 2.21")
 DEBUG = False
 
 DRIVE_TOPIC = "/vesc/ackermann_cmd_mux/input/navigation"  # /nav
 NBR_POINTS_SCAN = 20
 
-GAP_DISTANCE_TRESHOLD = 1.0
+GAP_DISTANCE_TRESHOLD = 1.3  # m
 CROP_SCAN = (
     200  # Number of points to remove from each side of the scan, must not be too big
 )
+
+BEST_POINT_METHOD = "middle"
 
 # Angle param
 SMOOTH_ANGLE = 1
@@ -30,7 +32,7 @@ K_PAST = 0.1
 # Speed params
 MAX_SPEED = 2  # m/s
 MIN_SPEED = 0.8  # m/s
-DISTANCE_FOR_MAX_SPEED = 2  # m
+DISTANCE_FOR_MAX_SPEED = 5  # m
 
 # Bubble params
 SAFE_DISTANCE = 0.4  # m
@@ -251,11 +253,13 @@ class ReactiveFollowGap:
         biggest_gap_left, biggest_gap_right = get_biggest_gap(ranges)
 
         # Find the best point in the gap
-        """
-        biggest_gap_best = biggest_gap_left + np.argmax(
-            ranges[biggest_gap_left : biggest_gap_right + 1]
-        )"""
-        biggest_gap_best_present = (biggest_gap_left + biggest_gap_right) // 2
+        if BEST_POINT_METHOD == "farthest":
+            biggest_gap_best_present = int(
+                biggest_gap_left
+                + np.argmax(ranges[biggest_gap_left : biggest_gap_right + 1])
+            )
+        elif BEST_POINT_METHOD == "middle":
+            biggest_gap_best_present = (biggest_gap_left + biggest_gap_right) // 2
 
         if self.latest_biggest_gap_best is None:
             biggest_gap_best = biggest_gap_best_present
