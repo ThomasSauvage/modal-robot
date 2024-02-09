@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import os
 import rospy
 import numpy as np
 import atexit
@@ -9,10 +10,13 @@ from numpy import linalg as LA
 from tf.transformations import euler_from_quaternion
 from nav_msgs.msg import Odometry
 
-ODOM_SUB = "/odom"  # "pf/pose/odom" ?
+ODOM_SUB = "/pf/pose/odom/"  # "odom"
 
-home = expanduser("~")
-file = open(strftime(home + "/rcws/logs/wp-%Y-%m-%d-%H-%M-%S", gmtime()) + ".csv", "w")
+if os.path.exists("map.csv"):
+    raise FileExistsError("map.csv already exists")
+
+
+file = open("map.csv", "w")
 
 
 def save_waypoint(data):

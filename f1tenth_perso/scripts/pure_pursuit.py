@@ -6,15 +6,15 @@ import rospy
 import tf2_ros
 import tf2_geometry_msgs
 
-from utils.speed import ERF
+from utils.speed import ERF, ReversedERF
 
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import Odometry
 
 
-DRIVE_TOPIC = "/nav"  # "/vesc/ackermann_cmd_mux/input/navigation"
-WAYPOINTS_FILENAME = "/home/thomas/rcws/logs/wp-2024-02-02-13-27-15.csv"
+DRIVE_TOPIC = "/vesc/ackermann_cmd_mux/input/navigation"  # '/nav'
+WAYPOINTS_FILENAME = "map.csv"
 
 
 NBR_WAYPOINTS = 400
@@ -24,8 +24,9 @@ SMOOTH_ANGLE = 0.5
 
 CURV_OVERHEAD = 10  # in indexes
 
-speed_function = ERF(max_speed=7, min_speed=2, x_for_max_speed=1, x_for_min_speed=0.8)
-speed_function.show()
+speed_function = ReversedERF(
+    max_speed=1.3, min_speed=0.7, x_for_max_speed=0, x_for_min_speed=1.22
+)
 
 
 def get_waypoints() -> np.ndarray:
