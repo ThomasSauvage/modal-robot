@@ -53,18 +53,14 @@ WAYPOINTS = get_waypoints()
 
 
 def get_marker_msg(
-    x: float,
-    y: float,
-    id: int,
-    color: "tuple[float, float, float]",
-    frame_id: str = "base_link",
+    x: float, y: float, id: int, color: "tuple[float, float, float]"
 ) -> Marker:
     """Return a Marker Message with the given position"""
 
     SCALE = 0.2
 
     marker_msg = Marker()
-    marker_msg.header.frame_id = frame_id
+    marker_msg.header.frame_id = "base_link"
     marker_msg.header.stamp = rospy.Time.now()
     marker_msg.ns = "marker1"
     marker_msg.id = id
@@ -175,9 +171,12 @@ class PurePursuit:
             np.ndarray: The position of the point in the car frame.
         """
 
-        norm = np.linalg.norm([x - self.car_x, y - self.car_y])
-        new_x = norm * math.cos(self.car_theta)
-        new_y = norm * math.sin(self.car_theta)
+        new_x = math.cos(self.car_theta) * (x - self.car_x) + math.sin(
+            self.car_theta
+        ) * (y - self.car_y)
+        new_y = -math.sin(self.car_theta) * (x - self.car_x) + math.cos(
+            self.car_theta
+        ) * (y - self.car_y)
 
         return np.array([new_x, new_y])
 
@@ -211,7 +210,7 @@ class PurePursuit:
             # If the target point is in front of the car, return it
             if np.dot(target_point_cf, np.array([1, 0])) >= 0:  # type: ignore
                 overhead_target = WAYPOINTS[
-                    (closest_waypoint_far + CURV_OVERHEAD) % NBR_WAYPOINTS, :2  # type: ignore
+                    (closest_waypoint_far + CURV_OVERHEAD) % NBR_WAYPOINTS, :2
                 ]
 
                 overhead_target_cf = self.from_global_to_car_frame(
@@ -234,7 +233,7 @@ class PurePursuit:
 
         overhead_angle = math.acos(
             np.dot(current_target_cf, overhead_target_cf)
-            / (np.linalg.norm(current_target_cf) * np.linalg.norm(overhead_target_cf))  # type: ignore
+            / (np.linalg.norm(current_target_cf) * np.linalg.norm(overhead_target_cf))
         )
 
         print(overhead_angle)
@@ -261,16 +260,6 @@ class PurePursuit:
                 1,
                 color=(0.81, 0.17, 0.93),
             )
-        )
-
-        # Test
-
-        self.marker_pub.publish(
-            get_marker_msg(5, 5, 2, color=(0, 1, 0), frame_id="map")
-        )
-        test_point = self.from_global_to_car_frame(5, 5)
-        self.marker_pub.publish(
-            get_marker_msg(test_point[0], test_point[1], 3, color=(0, 0, 1))
         )
 
         # Calculate curvature/steering angle
