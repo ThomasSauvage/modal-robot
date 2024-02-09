@@ -6,24 +6,34 @@ import rospy
 import tf2_ros
 import tf2_geometry_msgs
 
-from utils.speed import ERF, ReversedERF
+from utils.speed import ReversedERF
+from utils.traj import circle_traj
 
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import Odometry
-
+from sensor_msgs.msg import LaserScan
 
 DRIVE_TOPIC = "/nav"  # "/vesc/ackermann_cmd_mux/input/navigation"
+
 WAYPOINTS_FILENAME = "map.csv"
 
 SHOW_WAYPOINTS = False
 
 NBR_WAYPOINTS = 400
 
+
 DIST_L = 1  # m
-SMOOTH_ANGLE = 0.7
+SMOOTH_ANGLE = 0.4
 
 CURV_OVERHEAD = 15  # in indexes
+
+# == Dynamic window parameters ==
+NBR_TRAJ_DYN_WINDOW = 5
+DTHETA_TRAJ_DYN_WINDOW = 0.4  # rad
+NBR_POINTS_DYN_WINDOW = 10
+DT_DYN_WINDOW = 0.1  # s
+SAFE_DISTANCE_DYN_WINDOW = 0.4  # m
 
 speed_function = ReversedERF(
     max_speed=7, min_speed=1, x_for_max_speed=0, x_for_min_speed=1.22
@@ -141,6 +151,10 @@ class PurePursuit:
     """
 
     def __init__(self):
+        self.ranges: "np.ndarray | None" = None
+        self.indexes_to_delete: "list[int] | None" = None
+        self.angles: "np.ndarray | None" = None
+
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(buffer=self.tf_buffer)
 
@@ -153,6 +167,7 @@ class PurePursuit:
         )
 
         rospy.Subscriber("/odom", Odometry, self.pose_callback)
+        rospy.Subscriber("/scan", LaserScan, self.scan_callback)
 
     def from_global_to_car_frame(self, x: float, y: float) -> np.ndarray:
         """Transform a point from the global frame to the car frame.
@@ -231,11 +246,75 @@ class PurePursuit:
 
         overhead_angle = math.acos(
             np.dot(current_target_cf, overhead_target_cf)
-            / (np.linalg.norm(current_target_cf) * np.linalg.norm(overhead_target_cf))
+            / (np.linalg.norm(current_target_cf) * np.linalg.norm(overhead_target_cf))  # type: ignore
         )
 
-        print(overhead_angle)
+        # print(overhead_angle)
         return speed_function(overhead_angle)
+
+    def show_dynamic_window(
+        self,
+        angle_target: float,
+    ):
+        """Show the dynamic window of the car."""
+        for i in range(NBR_POINTS_DYN_WINDOW):
+            traj_robot_ref_x, traj_robot_ref_y = circle_traj(
+                1, angle_target, DT_DYN_WINDOW * i
+            )
+
+            self.marker_pub.publish(
+                get_marker_msg(
+                    traj_robot_ref_x, traj_robot_ref_y, 7000 + i, color=(0, 1, 0)
+                )
+            )
+
+    def traj_is_valid(self, speed: float, angle_target: float, id: int) -> bool:
+        """Return True if the trajectory is valid, False otherwise."""
+        for i in range(NBR_POINTS_DYN_WINDOW):
+            traj_x, traj_y = circle_traj(speed, angle_target, DT_DYN_WINDOW * i)
+
+            obstacles = self.ranges * np.array(
+                [np.cos(self.angles), np.sin(self.angles)]  # type: ignore
+            )
+
+            traj_points = np.zeros((2, self.angles.shape[0]))
+            traj_points[0, :] = traj_x
+            traj_points[1, :] = traj_y
+
+            dist_to_closest_obstacle = np.min(
+                np.linalg.norm(
+                    obstacles - traj_points,
+                    axis=0,
+                )
+            )
+
+            if dist_to_closest_obstacle < SAFE_DISTANCE_DYN_WINDOW:
+                self.marker_pub.publish(
+                    get_marker_msg(
+                        traj_x, traj_y, 9000 + 100 * id + i, color=(0.7, 0.7, 0)
+                    )
+                )
+                return False
+
+            self.marker_pub.publish(
+                get_marker_msg(traj_x, traj_y, 9000 + 100 * id + i, color=(0, 1, 0))
+            )
+
+        return True
+
+    def scan_callback(self, scan: LaserScan):
+
+        if self.angles is None or self.indexes_to_delete is None:
+            self.indexes_to_delete = []
+            for i in range(len(scan.ranges)):
+                if i % 40 == 0:
+                    self.indexes_to_delete.append(i)
+
+            angles = np.linspace(scan.angle_min, scan.angle_max, len(scan.ranges))
+            self.angles = np.delete(angles, self.indexes_to_delete)
+
+        ranges = np.array(scan.ranges)
+        self.ranges = np.delete(ranges, self.indexes_to_delete)
 
     def pose_callback(self, pose_msg: Odometry) -> None:
         # In lab ref, 0, 0 is the starting position
@@ -264,7 +343,13 @@ class PurePursuit:
 
         # publish drive message, don't forget to limit the steering angle between -0.4189 and 0.4189 radians
         speed = self.get_speed(target_point_cf, overhead_target_cf)
-        self.drive_pub.publish(get_nav_msg(curvature * SMOOTH_ANGLE, speed))
+        target_angle = curvature * SMOOTH_ANGLE
+        self.drive_pub.publish(get_nav_msg(target_angle, speed))
+
+        for i in range(-NBR_TRAJ_DYN_WINDOW // 2, NBR_POINTS_DYN_WINDOW // 2):
+            angle_dyn = target_angle + i * DTHETA_TRAJ_DYN_WINDOW
+
+            print(self.traj_is_valid(speed, angle_dyn, id=i))
 
         if SHOW_WAYPOINTS:
             self.marker_array_pub.publish(WAYPOINTS_MARKER)
