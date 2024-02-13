@@ -19,9 +19,13 @@ DRIVE_TOPIC = "/nav"  # "/vesc/ackermann_cmd_mux/input/navigation"
 WAYPOINTS_FILENAME = "map.csv"
 
 SHOW_WAYPOINTS = False
+SHOW_ALL_DYN_VIZ_POINTS = False
 
 NBR_WAYPOINTS = 400
 
+LIDAR_NBR_POINTS_TO_KEEP = (
+    10  # Keep only 1/LIDAR_NBR_POINTS_TO_KEEP of the points of the lidar
+)
 
 DIST_L = 1  # m
 SMOOTH_ANGLE = 0.4
@@ -255,11 +259,12 @@ class PurePursuit:
     def show_dynamic_window(
         self,
         angle_target: float,
+        speed: float,
     ):
         """Show the dynamic window of the car."""
         for i in range(NBR_POINTS_DYN_WINDOW):
             traj_robot_ref_x, traj_robot_ref_y = circle_traj(
-                1, angle_target, DT_DYN_WINDOW * i
+                speed, angle_target, DT_DYN_WINDOW * i
             )
 
             self.marker_pub.publish(
@@ -289,37 +294,47 @@ class PurePursuit:
             )
 
             if dist_to_closest_obstacle < SAFE_DISTANCE_DYN_WINDOW:
-                self.marker_pub.publish(
-                    get_marker_msg(
-                        traj_x, traj_y, 9000 + 100 * id + i, color=(0.7, 0.7, 0)
+                if SHOW_ALL_DYN_VIZ_POINTS:
+                    self.marker_pub.publish(
+                        get_marker_msg(
+                            traj_x, traj_y, 9000 + 100 * id + i, color=(0.7, 0.7, 0)
+                        )
                     )
-                )
                 return False
 
-            self.marker_pub.publish(
-                get_marker_msg(traj_x, traj_y, 9000 + 100 * id + i, color=(0, 1, 0))
-            )
+            if SHOW_ALL_DYN_VIZ_POINTS:
+                self.marker_pub.publish(
+                    get_marker_msg(traj_x, traj_y, 9000 + 100 * id + i, color=(0, 1, 0))
+                )
 
         return True
 
     def scan_callback(self, scan: LaserScan):
 
-        if self.angles is None or self.indexes_to_delete is None:
-            self.indexes_to_delete = []
-            for i in range(len(scan.ranges)):
-                if i % 40 == 0:
-                    self.indexes_to_delete.append(i)
+        if not self.ranges is None and not self.indexes_to_delete is None:
+            return  # Only define the ranges and indexes to delete once
 
-            angles = np.linspace(scan.angle_min, scan.angle_max, len(scan.ranges))
-            self.angles = np.delete(angles, self.indexes_to_delete)
+        self.indexes_to_delete = []
+        for i in range(len(scan.ranges)):
+            if i % LIDAR_NBR_POINTS_TO_KEEP != 0:  # Keep only 1/n of the points
+                self.indexes_to_delete.append(i)
+
+        angles = np.linspace(scan.angle_min, scan.angle_max, len(scan.ranges))
+        self.angles = np.delete(angles, self.indexes_to_delete)
 
         ranges = np.array(scan.ranges)
         self.ranges = np.delete(ranges, self.indexes_to_delete)
 
     def pose_callback(self, pose_msg: Odometry) -> None:
-        # In lab ref, 0, 0 is the starting position
+        if self.ranges is None or self.indexes_to_delete is None:
+            print("[INFO] Waiting for the lidar to be ready")
+            return
+
         x = pose_msg.pose.pose.position.x
         y = pose_msg.pose.pose.position.y
+
+        if SHOW_WAYPOINTS:
+            self.marker_array_pub.publish(WAYPOINTS_MARKER)
 
         if math.isnan(x) or math.isnan(y):
             raise ValueError("x or y is NaN")
@@ -344,15 +359,18 @@ class PurePursuit:
         # publish drive message, don't forget to limit the steering angle between -0.4189 and 0.4189 radians
         speed = self.get_speed(target_point_cf, overhead_target_cf)
         target_angle = curvature * SMOOTH_ANGLE
-        self.drive_pub.publish(get_nav_msg(target_angle, speed))
 
         for i in range(-NBR_TRAJ_DYN_WINDOW // 2, NBR_POINTS_DYN_WINDOW // 2):
             angle_dyn = target_angle + i * DTHETA_TRAJ_DYN_WINDOW
 
-            print(self.traj_is_valid(speed, angle_dyn, id=i))
+            if self.traj_is_valid(speed, angle_dyn, id=i):
+                self.show_dynamic_window(angle_dyn, speed)
+                self.drive_pub.publish(get_nav_msg(angle_dyn, speed))
+                return
 
-        if SHOW_WAYPOINTS:
-            self.marker_array_pub.publish(WAYPOINTS_MARKER)
+        print("[ERROR]: No valid trajectory found, stopping the car")
+        self.drive_pub.publish(get_nav_msg(0, 0))
+
         # print(
         #    f"CAR {x:.2f} {y:.2f} | TFC {target_point_cf[0]:.2f} {target_point_cf[1]:.2f} | CURV {curvature:.2f} | SPEED {speed:.2f}"
         # )
