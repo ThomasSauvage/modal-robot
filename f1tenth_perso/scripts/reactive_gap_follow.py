@@ -37,7 +37,7 @@ MIN_SPEED = 0.8  # m/s
 DISTANCE_FOR_MAX_SPEED = 2  # m
 
 # Bubble params
-SAFE_DISTANCE = 0.4  # m
+SAFE_DISTANCE = 1.5  # m
 BUBBLE_RADIUS = 0.4  # m
 
 speed_function = ERF(max_speed=3, min_speed=0.8, x_for_max_speed=2, x_for_min_speed=0)
