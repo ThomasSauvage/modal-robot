@@ -1,16 +1,18 @@
 #!/usr/bin/env python
-import sys
 import math
-import numpy as np
+import sys
+
 import matplotlib.pyplot as plt
+import numpy as np
 
 # ROS Imports
 import rospy
-from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
+from sensor_msgs.msg import LaserScan
+from utils.speed import ERF
 from visualization_msgs.msg import Marker
 
-print("Version : 2.24")
+print("Version : 2.31")
 DEBUG = False
 
 DRIVE_TOPIC = "/nav"  # "/vesc/ackermann_cmd_mux/input/navigation"
@@ -38,40 +40,7 @@ DISTANCE_FOR_MAX_SPEED = 2  # m
 SAFE_DISTANCE = 0.4  # m
 BUBBLE_RADIUS = 0.4  # m
 
-
-def affine(x: float, x1: float, x2: float, y1: float, y2: float) -> float:
-    """Return the affine function that goes through (x1, y1) and (x2, y2)"""
-
-    return ((y2 - y1) / (x2 - x1)) * (x - x1) + y1
-
-
-def erf_remap(x: float) -> float:
-    """erf remaped from [0, DISTANCE_FOR_MAX_SPEED] to [0, 1]"""
-
-    return (1 + math.erf(affine(x, 0, DISTANCE_FOR_MAX_SPEED, -2, 2))) / 2
-
-
-def speed_function(distance: float) -> float:
-    """Returns the speed of the robot in function of the distance."""
-
-    if distance >= DISTANCE_FOR_MAX_SPEED:
-        return MAX_SPEED
-    else:
-        return (MAX_SPEED - MIN_SPEED) * erf_remap(distance) + MIN_SPEED
-        # Affine
-        # return ((MAX_SPEED - MIN_SPEED) / DISTANCE_FOR_MAX_SPEED) * distance + MIN_SPEED
-
-
-def test_speed_function():
-    dist = np.linspace(0, DISTANCE_FOR_MAX_SPEED - 0.01, 100)
-
-    speed = np.vectorize(speed_function)(dist)
-
-    plt.plot(dist, speed)
-    plt.show()
-
-
-# test_speed_function()
+speed_function = ERF(max_speed=3, min_speed=0.8, x_for_max_speed=2, x_for_min_speed=0)
 
 
 def get_nav_msg(angle: float, distance: float):
