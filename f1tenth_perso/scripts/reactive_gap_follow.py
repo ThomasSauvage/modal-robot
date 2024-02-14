@@ -189,7 +189,8 @@ def get_fancy_lidar_string(
 def add_bubble(
     ranges_no_bubble: np.ndarray, angle_increment: float, nbr_points_per_mean: int
 ) -> np.ndarray:
-    # Eliminate all points inside 'bubble' (set them to zero)
+    """Eliminate all points inside 'bubble' (set them to zero)"""
+
     ranges = ranges_no_bubble.copy()
     for i in range(len(ranges_no_bubble)):
         if ranges_no_bubble[i] < SAFE_DISTANCE:
@@ -201,6 +202,8 @@ def add_bubble(
             indexes_to_ban = int(theta_to_ban / (angle_increment * nbr_points_per_mean))
 
             ranges[i - indexes_to_ban : i + indexes_to_ban] = 0
+
+    return ranges
 
 
 class ReactiveFollowGap:
