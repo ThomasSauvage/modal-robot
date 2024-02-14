@@ -186,6 +186,23 @@ def get_fancy_lidar_string(
     return lidar_string[::-1] + f" Speed: {speed_function(distance)}"
 
 
+def add_bubble(
+    ranges_no_bubble: np.ndarray, angle_increment: float, nbr_points_per_mean: int
+) -> np.ndarray:
+    # Eliminate all points inside 'bubble' (set them to zero)
+    ranges = ranges_no_bubble.copy()
+    for i in range(len(ranges_no_bubble)):
+        if ranges_no_bubble[i] < SAFE_DISTANCE:
+            if ranges_no_bubble[i] != 0:
+                theta_to_ban = np.arctan(BUBBLE_RADIUS / ranges_no_bubble[i])
+            else:
+                theta_to_ban = np.pi / 2
+
+            indexes_to_ban = int(theta_to_ban / (angle_increment * nbr_points_per_mean))
+
+            ranges[i - indexes_to_ban : i + indexes_to_ban] = 0
+
+
 class ReactiveFollowGap:
     def __init__(self):
         # Topics & Subscriptions,Publishers
@@ -201,22 +218,9 @@ class ReactiveFollowGap:
         """Process each LiDAR scan as per the Follow Gap algorithm & publish an AckermannDriveStamped Message"""
 
         nbr_points_per_mean = int((len(data.ranges) - 2 * CROP_SCAN) / NBR_POINTS_SCAN)
+
         ranges_no_bubble = preprocess_scan(data.ranges)  # type: ignore
-
-        # Eliminate all points inside 'bubble' (set them to zero)
-        ranges = ranges_no_bubble.copy()
-        for i in range(len(ranges_no_bubble)):
-            if ranges_no_bubble[i] < SAFE_DISTANCE:
-                if ranges_no_bubble[i] != 0:
-                    theta_to_ban = np.arctan(BUBBLE_RADIUS / ranges_no_bubble[i])
-                else:
-                    theta_to_ban = np.pi / 2
-
-                indexes_to_ban = int(
-                    theta_to_ban / (data.angle_increment * nbr_points_per_mean)
-                )
-
-                ranges[i - indexes_to_ban : i + indexes_to_ban] = 0
+        ranges = add_bubble(ranges_no_bubble, data.angle_increment, nbr_points_per_mean)
 
         # Find max length gap
         biggest_gap_left, biggest_gap_right = get_biggest_gap(ranges)
