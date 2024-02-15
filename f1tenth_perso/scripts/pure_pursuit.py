@@ -1,19 +1,17 @@
 #!/usr/bin/env python
-import numpy as np
 import math
 
+import numpy as np
 import rospy
-import tf2_ros
 import tf2_geometry_msgs
-
-from utils.speed import ReversedERF
-from utils.traj import circle_traj
-from utils.iterator import middle_range
-
+import tf2_ros
 from ackermann_msgs.msg import AckermannDriveStamped
-from visualization_msgs.msg import Marker, MarkerArray
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
+from utils.iterator import middle_range
+from utils.speed import ReversedERF
+from utils.traj import circle_traj
+from visualization_msgs.msg import Marker, MarkerArray
 
 DRIVE_TOPIC = "/nav"  # "/vesc/ackermann_cmd_mux/input/navigation"
 
@@ -210,7 +208,7 @@ class PurePursuit:
             np.ndarray: The target point.
         """
 
-        # Find the farthest waypoint of dist <= DIST_L and the closest waypoint of dist > DIST_L
+        # Find the closest waypoint of dist > DIST_L
         dists_to_car = np.linalg.norm(WAYPOINTS[:, :2] - np.array([x, y]), axis=1)
         values_far = dists_to_car.copy()
         values_far[values_far <= DIST_L] = np.inf
