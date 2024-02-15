@@ -8,6 +8,7 @@ import tf2_geometry_msgs
 
 from utils.speed import ReversedERF
 from utils.traj import circle_traj
+from utils.iterator import middle_range
 
 from ackermann_msgs.msg import AckermannDriveStamped
 from visualization_msgs.msg import Marker, MarkerArray
@@ -19,7 +20,7 @@ DRIVE_TOPIC = "/nav"  # "/vesc/ackermann_cmd_mux/input/navigation"
 WAYPOINTS_FILENAME = "map.csv"
 
 SHOW_WAYPOINTS = False
-SHOW_ALL_DYN_VIZ_POINTS = False
+SHOW_ALL_DYN_VIZ_POINTS = True
 
 NBR_WAYPOINTS = 400
 
@@ -37,10 +38,10 @@ NBR_TRAJ_DYN_WINDOW = 5
 DTHETA_TRAJ_DYN_WINDOW = 0.4  # rad
 NBR_POINTS_DYN_WINDOW = 10
 DT_DYN_WINDOW = 0.1  # s
-SAFE_DISTANCE_DYN_WINDOW = 0.4  # m
+SAFE_DISTANCE_DYN_WINDOW = 0.2  # m
 
 speed_function = ReversedERF(
-    max_speed=7, min_speed=1, x_for_max_speed=0, x_for_min_speed=1.22
+    max_speed=5, min_speed=1, x_for_max_speed=0, x_for_min_speed=1.22
 )
 
 
@@ -262,9 +263,12 @@ class PurePursuit:
         speed: float,
     ):
         """Show the dynamic window of the car."""
+
+        angular_speed = angle_target / DT_DYN_WINDOW
+
         for i in range(NBR_POINTS_DYN_WINDOW):
             traj_robot_ref_x, traj_robot_ref_y = circle_traj(
-                speed, angle_target, DT_DYN_WINDOW * i
+                speed, angular_speed, DT_DYN_WINDOW * i
             )
 
             self.marker_pub.publish(
@@ -275,8 +279,11 @@ class PurePursuit:
 
     def traj_is_valid(self, speed: float, angle_target: float, id: int) -> bool:
         """Return True if the trajectory is valid, False otherwise."""
+
+        angular_speed = angle_target / DT_DYN_WINDOW
+
         for i in range(NBR_POINTS_DYN_WINDOW):
-            traj_x, traj_y = circle_traj(speed, angle_target, DT_DYN_WINDOW * i)
+            traj_x, traj_y = circle_traj(speed, angular_speed, DT_DYN_WINDOW * i)
 
             obstacles = self.ranges * np.array(
                 [np.cos(self.angles), np.sin(self.angles)]  # type: ignore
@@ -360,11 +367,11 @@ class PurePursuit:
         speed = self.get_speed(target_point_cf, overhead_target_cf)
         target_angle = curvature * SMOOTH_ANGLE
 
-        for i in range(-NBR_TRAJ_DYN_WINDOW // 2, NBR_POINTS_DYN_WINDOW // 2):
+        for i in middle_range(-NBR_TRAJ_DYN_WINDOW // 2, NBR_POINTS_DYN_WINDOW // 2):
+
             angle_dyn = target_angle + i * DTHETA_TRAJ_DYN_WINDOW
 
             if self.traj_is_valid(speed, angle_dyn, id=i):
-                self.show_dynamic_window(angle_dyn, speed)
                 self.drive_pub.publish(get_nav_msg(angle_dyn, speed))
                 return
 
