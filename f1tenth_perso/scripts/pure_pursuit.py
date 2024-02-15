@@ -33,8 +33,8 @@ SMOOTH_ANGLE = 0.4
 CURV_OVERHEAD = 15  # in indexes
 
 # == Dynamic window parameters ==
-NBR_TRAJ_DYN_WINDOW = 5
-DTHETA_TRAJ_DYN_WINDOW = 0.4  # rad
+NBR_TRAJ_DYN_WINDOW = 20
+DTHETA_TRAJ_DYN_WINDOW = 0.2  # rad
 NBR_POINTS_DYN_WINDOW = 10
 DT_DYN_WINDOW = 0.1  # s
 SAFE_DISTANCE_DYN_WINDOW = 0.2  # m
@@ -182,7 +182,7 @@ class PurePursuit:
     ):
         """Show the dynamic window of the car."""
 
-        angular_speed = angle_target / DT_DYN_WINDOW
+        angular_speed = angle_target
 
         for i in range(NBR_POINTS_DYN_WINDOW):
             traj_robot_ref_x, traj_robot_ref_y = circle_traj(
@@ -198,7 +198,7 @@ class PurePursuit:
     def traj_is_valid(self, speed: float, angle_target: float, id: int) -> bool:
         """Return True if the trajectory is valid, False otherwise."""
 
-        angular_speed = angle_target / DT_DYN_WINDOW
+        angular_speed = angle_target
 
         for i in range(NBR_POINTS_DYN_WINDOW):
             traj_x, traj_y = circle_traj(speed, angular_speed, DT_DYN_WINDOW * i)
@@ -285,11 +285,11 @@ class PurePursuit:
         speed = self.get_speed(target_point_cf, overhead_target_cf)
         target_angle = curvature * SMOOTH_ANGLE
 
-        for i in middle_range(-NBR_TRAJ_DYN_WINDOW // 2, NBR_POINTS_DYN_WINDOW // 2):
-
+        for i in middle_range(-NBR_TRAJ_DYN_WINDOW // 2, NBR_TRAJ_DYN_WINDOW // 2):
             angle_dyn = target_angle + i * DTHETA_TRAJ_DYN_WINDOW
 
             if self.traj_is_valid(speed, angle_dyn, id=i):
+                print("VALID")
                 self.drive_pub.publish(get_nav_msg(angle_dyn, speed))
                 return
 
