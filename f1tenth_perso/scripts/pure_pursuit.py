@@ -35,9 +35,9 @@ CURV_OVERHEAD = 15  # in indexes
 # == Dynamic window parameters ==
 NBR_TRAJ_DYN_WINDOW = 20
 DTHETA_TRAJ_DYN_WINDOW = 0.2  # rad
-NBR_POINTS_DYN_WINDOW = 10
+NBR_POINTS_DYN_WINDOW = 5
 DT_DYN_WINDOW = 0.1  # s
-SAFE_DISTANCE_DYN_WINDOW = 0.2  # m
+SAFE_DISTANCE_DYN_WINDOW = 0.3  # m
 
 speed_function = ReversedERF(
     max_speed=5, min_speed=1, x_for_max_speed=0, x_for_min_speed=1.22
@@ -289,7 +289,6 @@ class PurePursuit:
             angle_dyn = target_angle + i * DTHETA_TRAJ_DYN_WINDOW
 
             if self.traj_is_valid(speed, angle_dyn, id=i):
-                print("VALID")
                 self.drive_pub.publish(get_nav_msg(angle_dyn, speed))
                 return
 
